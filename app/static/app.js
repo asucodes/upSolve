@@ -4,6 +4,15 @@ let handle = "",
   data = null,
   topics = [];
 const status = (message) => ($("status").textContent = message);
+function ratingColor(rating) {
+  if (rating == null || rating < 1200) return "#777";
+  if (rating < 1400) return "#008000";
+  if (rating < 1600) return "#038a8a";
+  if (rating < 1900) return "#0000aa";
+  if (rating < 2100) return "#a0a";
+  if (rating < 2400) return "#b66b00";
+  return "#c00";
+}
 const esc = (s) =>
   String(s ?? "").replace(
     /[&<>"']/g,
@@ -61,6 +70,7 @@ async function load(h) {
   $("sample-banner").hidden = !data.sample;
   $("sync").disabled = data.sample;
   $("profile-name").textContent = data.handle;
+  $("profile-name").style.color = ratingColor(data.official_rating);
   $("profile-meta").textContent =
     `Last synced ${new Date(data.updated * 1000).toLocaleString()} · ${data.sample ? "Synthetic sample" : "Public Codeforces profile"}`;
   $("model-name").textContent = data.model;
@@ -78,13 +88,15 @@ async function load(h) {
     )
     .join("");
   $("recommendations").innerHTML =
-    data.recommendations
+    '<table class="problems-table"><thead><tr><th scope="col">#</th><th scope="col">Problem</th><th scope="col">Rating</th><th scope="col">Solve estimate</th></tr></thead><tbody>' +
+    (data.recommendations
       .map(
         (p, i) =>
-          `<article class="card"><span class="eyebrow">${["WARM-UP", "MAIN CHALLENGE", "STRETCH"][i]}</span><div class="chance">${Math.round(p.probability * 100)}%<small>estimated chance</small></div><h3>${esc(p.name)}</h3><div>${p.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}<span class="tag">${p.rating}</span></div><p>${esc(p.reason)}</p>${data.sample ? '<span class="tag">Sample exercise · no live link</span>' : `<a href="${esc(p.url)}" target="_blank" rel="noopener">Solve on Codeforces ↗</a>`}</article>`,
+          `<tr><td class="problem-index">${i + 1}</td><td>${data.sample ? `<strong>${esc(p.name)}</strong>` : `<a class="problem-name" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a>`}<div class="problem-tags">${p.tags.map((t) => esc(t)).join(", ")}</div><p class="problem-reason">${esc(p.reason)}${data.sample ? " Sample exercise; no live link." : ""}</p></td><td class="problem-rating">${p.rating}</td><td class="problem-chance">${Math.round(p.probability * 100)}%<small>${["Warm-up", "Main challenge", "Stretch"][i]}</small></td></tr>`,
       )
       .join("") ||
-    "<p>No matching unseen problems yet. More practice will refine your estimates.</p>";
+      '<tr><td colspan="4">No matching unseen problems. More practice will refine your estimates.</td></tr>') +
+    "</tbody></table>";
   $("topic-bars").innerHTML =
     a.topics
       .slice()
