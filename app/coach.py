@@ -125,8 +125,10 @@ def analyze(submissions, now):
     }
 
 
-def recommend(catalog, analysis, focus=(), model=None, limit=3):
+def recommend(catalog, analysis, focus=(), model=None, limit=3, rating=None):
     topics = {t["name"]: t for t in analysis["topics"]}
+    baseline = rating if rating is not None else 1000
+    routine_level = max(800, int(baseline // 100) * 100)
     candidates = []
     for p in catalog:
         tags = p.get("tags", [])
@@ -138,7 +140,17 @@ def recommend(catalog, analysis, focus=(), model=None, limit=3):
             or key(p) in analysis["attempted"]
         ):
             continue
-        skill = sum(topics.get(t, {}).get("rating", 1000) for t in tags) / len(tags)
+        # Topic estimates with little evidence shrink toward the user's current
+        # contest rating. Unknown tags are not evidence of topic mastery.
+        skill = sum(
+            (
+                topics.get(t, {}).get("evidence", 0)
+                * topics.get(t, {}).get("rating", baseline)
+                + 10 * baseline
+            )
+            / (topics.get(t, {}).get("evidence", 0) + 10)
+            for t in tags
+        ) / len(tags)
         count = max((topics.get(t, {}).get("evidence", 0) for t in tags), default=0)
         estimate = (
             probability(skill, p["rating"])
@@ -163,15 +175,29 @@ def recommend(catalog, analysis, focus=(), model=None, limit=3):
                     if matched
                     else "Matches your current topic estimates. ",
                     "focused": bool(matched),
+                    "estimate_kind": "conditional acceptance classifier"
+                    if model is not None
+                    else "uncalibrated Elo heuristic",
                     "url": f"https://codeforces.com/problemset/problem/{p['contestId']}/{p['index']}",
                 }
             )
     chosen = []
-    for target in [0.7, 0.6, 0.5][:limit]:
-        if not candidates:
-            break
-        candidates.sort(
+    for role, target, ceiling in [
+        ("Warm-up", 0.7, routine_level),
+        ("Main challenge", 0.6, routine_level + 100),
+        ("Stretch", 0.5, routine_level + 200),
+    ][:limit]:
+        eligible = [p for p in candidates if p["rating"] <= ceiling]
+        if not eligible:
+            continue
+        eligible.sort(
             key=lambda p: (not p["focused"], abs(p["probability"] - target), p["key"])
         )
-        chosen.append(candidates.pop(0))
+        selected = eligible[0]
+        candidates.remove(selected)
+        selected["role"] = role
+        selected["reason"] += (
+            f" {role}: difficulty {selected['rating']}, within the {ceiling} ceiling based on your {baseline:g} rating reference."
+        )
+        chosen.append(selected)
     return chosen

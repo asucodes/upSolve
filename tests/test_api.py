@@ -13,7 +13,7 @@ def test_demo_plan_persistence_and_model_isolation(tmp_path, monkeypatch):
         assert client.get("/api/v1/profiles/unknown/dashboard").status_code == 404
         assert client.post("/api/v1/demo").status_code == 200
         data = client.get("/api/v1/profiles/demo/dashboard").json()
-        assert data["sample"] and data["model"] == "Elo fallback"
+        assert data["sample"] and data["model"] == "Topic Elo heuristic"
         assert data["analysis"]["solved"]
         assert data["recommendations"]
         assert (

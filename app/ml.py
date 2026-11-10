@@ -106,4 +106,5 @@ def train(examples):
         "intercept": float(model.intercept_[0]),
         "metrics": metrics,
         "version": 2,
+        "recommendation_ready": False,
     }

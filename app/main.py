@@ -4,12 +4,13 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
+from typing import Literal
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from . import store, coach, ml
+from . import store, coach, ml, practice
 from .codeforces import Codeforces
 from .demo import fixture
 
@@ -72,8 +73,105 @@ class Job(BaseModel):
 
 
 @app.get("/", include_in_schema=False)
+@app.get("/problemset", include_in_schema=False)
+@app.get("/gym", include_in_schema=False)
 def index():
     return FileResponse(static / "index.html")
+
+
+def practice_context(handle):
+    profile = read_profile(handle) if handle else None
+    sample = bool(profile and profile.get("sample"))
+    with store.connect() as db:
+        catalog = store.get(
+            db,
+            "catalog",
+            "demo" if sample else "public",
+            {"problems": [], "updated": None},
+        )
+    analysis = (
+        coach.analyze(profile["submissions"], time.time())
+        if profile
+        else {"solved": [], "attempted": [], "topics": []}
+    )
+    return profile, catalog, analysis, sample
+
+
+@app.post("/api/v1/problems/refresh")
+async def refresh_problemset() -> dict:
+    try:
+        result = await cf.call("problemset.problems")
+    except Exception as exc:
+        raise HTTPException(
+            502, "Codeforces catalog refresh failed; cached problems are preserved."
+        ) from exc
+    counts = {
+        coach.key(p): p["solvedCount"] for p in result.get("problemStatistics", [])
+    }
+    problems = [
+        {**p, "solvedCount": counts.get(coach.key(p))} for p in result["problems"]
+    ]
+    updated = time.time()
+    with store.connect() as db:
+        store.put(db, "catalog", "public", {"updated": updated, "problems": problems})
+    return {"problems": len(problems), "updated": updated}
+
+
+@app.get("/api/v1/practice/topics")
+def practice_topics() -> list[dict]:
+    return practice.TOPICS
+
+
+@app.get("/api/v1/problems")
+def problemset(
+    handle: str | None = None,
+    search: str = Query(default="", max_length=120),
+    tag: str = "",
+    category: str = "",
+    minimum: int = Query(default=800, ge=0, le=4000),
+    maximum: int = Query(default=4000, ge=0, le=4000),
+    state: Literal["all", "solved", "attempted", "unattempted"] = "all",
+    sort: Literal["newest", "difficulty"] = "newest",
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    include_unrated: bool = True,
+) -> dict:
+    if minimum > maximum:
+        raise HTTPException(422, "Minimum rating must not exceed maximum rating.")
+    if category and not practice.category(category):
+        raise HTTPException(422, "Unknown topic group.")
+    if state != "all" and not handle:
+        raise HTTPException(422, "Select a profile to filter by solve status.")
+    _, catalog, analysis, sample = practice_context(handle)
+    return {
+        **practice.browse(
+            catalog["problems"],
+            analysis,
+            search=search,
+            tag=tag,
+            category_id=category,
+            minimum=minimum,
+            maximum=maximum,
+            state=state,
+            sort=sort,
+            page=page,
+            page_size=page_size,
+            include_unrated=include_unrated,
+            sample=sample,
+        ),
+        "sample": sample,
+        "catalog_updated": catalog.get("updated"),
+    }
+
+
+@app.get("/api/v1/profiles/{handle}/gym")
+def topic_gym(handle: str) -> dict:
+    profile, catalog, analysis, sample = practice_context(handle)
+    return {
+        "handle": profile["handle"],
+        "sample": sample,
+        **practice.gym(catalog["problems"], analysis, profile.get("rating"), sample),
+    }
 
 
 @app.get("/api/v1/health")
@@ -215,7 +313,10 @@ def dashboard(handle: str) -> dict:
         catalog["problems"],
         analysis,
         plan["topics"],
-        ml.Predictor(artifact) if artifact else None,
+        ml.Predictor(artifact)
+        if artifact and artifact.get("recommendation_ready", False)
+        else None,
+        rating=p.get("rating"),
     )
     return {
         "handle": p["handle"],
@@ -240,10 +341,12 @@ def dashboard(handle: str) -> dict:
         "analysis": {k: v for k, v in analysis.items() if k != "examples"},
         "recommendations": recommendations,
         "plan": plan,
-        "model": "logistic regression" if artifact else "Elo fallback",
-        "recommendation_note": "No unseen rated problems fit the 50–70% band. Try another focus after more practice."
+        "model": "logistic regression"
+        if artifact and artifact.get("recommendation_ready", False)
+        else "Topic Elo heuristic",
+        "recommendation_note": "No unseen problems fit both the rating limits and the 50–70% heuristic band. Browse the Problemset to explore manually."
         if not recommendations
-        else "Estimated acceptance within 24 hours. Estimates are not guarantees.",
+        else "Uncalibrated topic Elo estimates, constrained by your current rating. The experimental classifier predicts acceptance among submitted attempts and is not used as independent solve ability.",
     }
 
 
@@ -286,6 +389,9 @@ def model_status() -> dict:
         "profiles": len(artifact.get("handles", [])) if artifact else 0,
         "trained_at": artifact.get("trained_at") if artifact else None,
         "version": artifact.get("version") if artifact else None,
+        "recommendation_ready": artifact.get("recommendation_ready", False)
+        if artifact
+        else False,
     }
 
 
