@@ -4,6 +4,13 @@ let handle = "",
   data = null,
   topics = [];
 let loadVersion = 0;
+let activeView =
+  location.hash.slice(1) ||
+  (location.pathname === "/problemset"
+    ? "problemset"
+    : location.pathname === "/gym"
+      ? "gym"
+      : "today");
 const status = (message) => ($("status").textContent = message);
 function ratingColor(rating) {
   if (rating == null || rating < 1200) return "#777";
@@ -44,10 +51,25 @@ async function guarded(fn) {
   }
 }
 function view(name) {
+  if (!["today", "problemset", "gym", "insights", "training"].includes(name))
+    name = "today";
+  activeView = name;
+  history.replaceState(null, "", "#" + name);
+  $("workspace").hidden = !data && !["problemset", "gym"].includes(name);
+  for (const el of document.querySelectorAll(
+    ".profile-head, #stats, #coverage-note",
+  ))
+    el.hidden = !data;
   for (const section of document.querySelectorAll(".view"))
     section.hidden = section.id !== name;
   for (const button of document.querySelectorAll("nav button"))
     button.setAttribute("aria-selected", button.dataset.view === name);
+  if (name === "problemset") guarded(() => loadProblems());
+  if (name === "gym") guarded(() => loadGym());
+  if (!data && !["problemset", "gym"].includes(name))
+    status(
+      "Select or connect a profile first. You can browse the Problemset without one.",
+    );
 }
 for (const b of document.querySelectorAll("nav button"))
   b.onclick = () => view(b.dataset.view);
@@ -99,11 +121,11 @@ async function load(h) {
     ? ""
     : `Counted from ${data.submission_coverage.submissions} imported submissions. This may differ from your full Codeforces profile total. <a href="${esc(data.submission_coverage.profile_url)}" target="_blank" rel="noopener">View Codeforces profile</a>.`;
   $("recommendations").innerHTML =
-    '<table class="problems-table"><thead><tr><th scope="col">#</th><th scope="col">Problem</th><th scope="col">Rating</th><th scope="col">Solve estimate</th></tr></thead><tbody>' +
+    '<table class="problems-table"><thead><tr><th scope="col">#</th><th scope="col">Problem</th><th scope="col">Rating</th><th scope="col">Practice estimate</th></tr></thead><tbody>' +
     (data.recommendations
       .map(
         (p, i) =>
-          `<tr><td class="problem-index">${i + 1}</td><td>${data.sample ? `<strong>${esc(p.name)}</strong>` : `<a class="problem-name" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a>`}<div class="problem-tags">${p.tags.map((t) => esc(t)).join(", ")}</div><p class="problem-reason">${esc(p.reason)}${data.sample ? " Sample exercise; no live link." : ""}</p></td><td class="problem-rating">${p.rating}</td><td class="problem-chance">${Math.round(p.probability * 100)}%<small>${["Warm-up", "Main challenge", "Stretch"][i]}</small></td></tr>`,
+          `<tr><td class="problem-index">${i + 1}</td><td>${data.sample ? `<strong>${esc(p.name)}</strong>` : `<a class="problem-name" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a>`}<div class="problem-tags">${p.tags.map((t) => esc(t)).join(", ")}</div><p class="problem-reason">${esc(p.reason)}${data.sample ? " Sample exercise; no live link." : ""}</p></td><td class="problem-rating">${p.rating}</td><td class="problem-chance">${Math.round(p.probability * 100)}%<small>${esc(p.role)}</small></td></tr>`,
       )
       .join("") ||
       '<tr><td colspan="4">No matching unseen problems. More practice will refine your estimates.</td></tr>') +
@@ -165,6 +187,7 @@ async function load(h) {
   if (version !== loadVersion) return;
   await metrics();
   if (version !== loadVersion) return;
+  view(activeView);
   status(
     `Loaded ${data.handle}. ${data.sample ? "Sample data is separate from real imports." : "Sync after practicing to update your progress."}`,
   );
@@ -294,6 +317,149 @@ $("train-model").onclick = () =>
       $("train-model").disabled = false;
     }
   });
+let problemPage = 1,
+  problemPages = 1,
+  problemVersion = 0,
+  gymVersion = 0;
+let filterSetup;
+$("refresh-catalog").onclick = () =>
+  guarded(async () => {
+    $("refresh-catalog").disabled = true;
+    try {
+      status("Refreshing the Codeforces catalog…");
+      await api("/problems/refresh", { method: "POST" });
+      status("Catalog refreshed.");
+      await loadProblems(1);
+    } finally {
+      $("refresh-catalog").disabled = false;
+    }
+  });
+function practiceFilters() {
+  if (!filterSetup)
+    filterSetup = Promise.all([api("/practice/topics"), api("/topics")])
+      .then(([groups, tags]) => {
+        $("problem-category").innerHTML =
+          '<option value="">All topics</option>' +
+          groups
+            .map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`)
+            .join("");
+        $("problem-tag").innerHTML =
+          '<option value="">All tags</option>' +
+          tags.map((tag) => `<option>${esc(tag)}</option>`).join("");
+      })
+      .catch((error) => {
+        filterSetup = null;
+        throw error;
+      });
+  return filterSetup;
+}
+function practiceTable(items, start = 0, showRoles = false) {
+  return (
+    '<table class="problems-table"><thead><tr><th scope="col">#</th><th scope="col">Problem</th><th scope="col">Rating</th><th scope="col">' +
+    (showRoles ? "Practice role" : "Status") +
+    "</th></tr></thead><tbody>" +
+    (items
+      .map(
+        (p, i) =>
+          `<tr class="${p.status === "solved" ? "solved-row" : ""}"><td>${showRoles ? i + 1 : start + i + 1}</td><td>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.contestId + p.index)} · ${esc(p.name)}</a>` : `<strong>${esc(p.name)} (sample)</strong>`}<div class="problem-tags">${p.tags.map(esc).join(", ")}</div>${p.reason ? `<p class="problem-reason">${esc(p.reason)}</p>` : ""}</td><td class="problem-rating">${p.rating ?? "Unrated"}</td><td>${showRoles ? `${esc(p.role)}<br><small>${Math.round(p.probability * 100)}% Elo heuristic</small>` : esc(p.status)}</td></tr>`,
+      )
+      .join("") ||
+      '<tr><td colspan="4">No matching problems. Adjust the filters or synchronize a profile to populate the catalog.</td></tr>') +
+    "</tbody></table>"
+  );
+}
+async function loadProblems(page = 1) {
+  const version = ++problemVersion,
+    owner = handle;
+  await practiceFilters();
+  const query = new URLSearchParams({
+    search: $("problem-search").value.trim(),
+    category: $("problem-category").value,
+    tag: $("problem-tag").value,
+    minimum: $("problem-min").value,
+    maximum: $("problem-max").value,
+    state: $("problem-state").value,
+    sort: $("problem-sort").value,
+    include_unrated: String($("problem-unrated").checked),
+    page: String(page),
+  });
+  if (owner) query.set("handle", owner);
+  $("problem-summary").textContent = "Loading catalog…";
+  let result;
+  try {
+    result = await api("/problems?" + query);
+  } catch (error) {
+    if (version === problemVersion && owner === handle) {
+      $("problem-summary").textContent = error.message;
+      $("problem-table").innerHTML = "";
+      $("problem-prev").disabled = true;
+      $("problem-next").disabled = true;
+    }
+    throw error;
+  }
+  if (version !== problemVersion || owner !== handle) return;
+  problemPage = result.page;
+  problemPages = result.pages;
+  $("problem-summary").textContent =
+    `${result.total} matching problems${result.sample ? " · Synthetic sample catalog" : ""}${owner ? " · Status for " + owner : ""}.`;
+  $("problem-table").innerHTML = practiceTable(
+    result.items,
+    (page - 1) * result.page_size,
+  );
+  $("problem-page").textContent = `Page ${page} of ${result.pages}`;
+  $("problem-prev").disabled = page <= 1;
+  $("problem-next").disabled = page >= result.pages;
+}
+$("problem-filter").onsubmit = (e) => {
+  e.preventDefault();
+  guarded(() => loadProblems(1));
+};
+$("problem-prev").onclick = () =>
+  guarded(() => loadProblems(Math.max(1, problemPage - 1)));
+$("problem-next").onclick = () =>
+  guarded(() => loadProblems(Math.min(problemPages, problemPage + 1)));
+async function loadGym() {
+  const version = ++gymVersion,
+    owner = handle;
+  if (!owner) {
+    $("gym-summary").textContent =
+      "Select or connect a profile to personalize your topic gym.";
+    $("gym-topics").innerHTML = "";
+    return;
+  }
+  $("gym-summary").textContent = "Building topic practice sets…";
+  $("gym-topics").innerHTML = "";
+  let result;
+  try {
+    result = await api(`/profiles/${encodeURIComponent(owner)}/gym`);
+  } catch (error) {
+    if (version === gymVersion && owner === handle)
+      $("gym-summary").textContent = error.message;
+    throw error;
+  }
+  if (version !== gymVersion || owner !== handle) return;
+  $("gym-summary").textContent =
+    `Training for ${owner}, using rating reference ${result.rating_reference}${result.provisional_rating ? " (provisional: no official rating)" : ""}. Warm-up at or below your rounded rating; main +100; stretch +200. Each topic has its own set, so problems can appear in more than one topic.`;
+  $("gym-topics").innerHTML = result.topics
+    .map(
+      (topic, i) =>
+        `<details class="topic-gym" ${i === 0 ? "open" : ""}><summary>${esc(topic.name)} <span>${topic.solved} solved / ${topic.catalog_problems} catalog problems</span></summary><div class="gym-content"><p>${topic.attempted_unsolved} attempted but unsolved · Tags: ${topic.tags.map(esc).join(", ")}</p><p><a href="${esc(topic.resource)}" target="_blank" rel="noopener">Learning resource ↗</a> · <button class="text-button" data-browse-topic="${esc(topic.id)}">Browse all ${esc(topic.name.toLowerCase())} problems</button></p>${topic.recommendations.length ? practiceTable(topic.recommendations, 0, true) : "<p>No unseen problems fit the current difficulty and estimate rules. Browse the topic manually; the gym will not silently recommend harder problems.</p>"}</div></details>`,
+    )
+    .join("");
+  for (const button of document.querySelectorAll("[data-browse-topic]"))
+    button.onclick = () =>
+      guarded(async () => {
+        await practiceFilters();
+        $("problem-category").value = button.dataset.browseTopic;
+        $("problem-tag").value = "";
+        $("problem-search").value = "";
+        $("problem-state").value = "unattempted";
+        $("problem-min").value = "800";
+        $("problem-max").value = "4000";
+        view("problemset");
+      });
+}
+view(activeView);
 guarded(async () => {
   await savedProfiles();
   const saved = localStorage.getItem("upsolve.handle");

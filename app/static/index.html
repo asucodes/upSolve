@@ -48,6 +48,13 @@
           </div>
         </div>
       </section>
+      <nav aria-label="Dashboard views">
+        <button data-view="today" aria-selected="true">Today</button>
+        <button data-view="problemset" aria-selected="false">Problemset</button>
+        <button data-view="gym" aria-selected="false">Topic gym</button>
+        <button data-view="insights" aria-selected="false">Insights</button>
+        <button data-view="training" aria-selected="false">Training</button>
+      </nav>
       <p id="status" role="status" aria-live="polite">
         Connect your handle to begin, or explore the sample.
       </p>
@@ -65,11 +72,6 @@
         </div>
         <section id="stats" class="stats"></section>
         <p id="coverage-note" class="coverage-note"></p>
-        <nav aria-label="Dashboard views">
-          <button data-view="today" aria-selected="true">Today</button
-          ><button data-view="insights" aria-selected="false">Insights</button
-          ><button data-view="training" aria-selected="false">Training</button>
-        </nav>
         <section id="today" class="view">
           <div class="section-heading">
             <div>
@@ -83,11 +85,115 @@
           <div class="callout">
             <h3>Why these problems?</h3>
             <p>
-              We match unseen problems to your topic estimates, aiming for a 50
-              to 70 percent acceptance probability within 24 hours. These
-              estimates describe submitted attempts, not independent mastery.
+              These are uncalibrated difficulty-match estimates, not measured
+              chances of solving independently. Warm-ups stay at or below your
+              current rating band; main and stretch problems allow up to 100 and
+              200 additional rating points. Sparse topic evidence is pulled
+              toward your current rating. Missing suitable problems are not
+              replaced with much harder ones.
             </p>
           </div>
+        </section>
+        <section id="problemset" class="view" hidden>
+          <h2>Problemset</h2>
+          <button id="refresh-catalog" class="secondary">
+            Refresh Codeforces catalog
+          </button>
+          <p>
+            Browse the cached Codeforces catalog. Choose a profile to see solved
+            and attempted problems. Problems open on Codeforces.
+          </p>
+          <form id="problem-filter" class="problem-filter">
+            <label
+              >Search
+              <input
+                id="problem-search"
+                placeholder="Problem name or ID"
+                maxlength="120"
+            /></label>
+            <label
+              >Topic group
+              <select id="problem-category">
+                <option value="">All topics</option>
+              </select></label
+            >
+            <label
+              >Codeforces tag
+              <select id="problem-tag">
+                <option value="">All tags</option>
+              </select></label
+            >
+            <label
+              >Minimum rating
+              <input
+                id="problem-min"
+                type="number"
+                min="0"
+                max="4000"
+                step="100"
+                value="800"
+            /></label>
+            <label
+              >Maximum rating
+              <input
+                id="problem-max"
+                type="number"
+                min="0"
+                max="4000"
+                step="100"
+                value="4000"
+            /></label>
+            <label
+              >Status
+              <select id="problem-state">
+                <option value="all">All problems</option>
+                <option value="unattempted">Unattempted</option>
+                <option value="attempted">Attempted, unsolved</option>
+                <option value="solved">Solved</option>
+              </select></label
+            >
+            <label
+              >Order
+              <select id="problem-sort">
+                <option value="newest">Newest first</option>
+                <option value="difficulty">Difficulty ascending</option>
+              </select></label
+            >
+            <label
+              ><input id="problem-unrated" type="checkbox" checked /> Include
+              unrated</label
+            >
+            <button>Filter problems</button>
+          </form>
+          <p id="problem-summary" role="status"></p>
+          <div id="problem-table" class="table-scroll"></div>
+          <div class="pagination">
+            <button id="problem-prev">Previous</button
+            ><span id="problem-page"></span
+            ><button id="problem-next">Next</button>
+          </div>
+        </section>
+        <section id="gym" class="view" hidden>
+          <h2>Topic practice gym</h2>
+          <p id="gym-summary">
+            Select or connect a profile to get a practice set for each topic.
+          </p>
+          <p>
+            Our topic groups map Codeforces tags to common CP subjects, informed
+            by
+            <a href="https://cp-algorithms.com/" target="_blank" rel="noopener"
+              >CP-Algorithms</a
+            >
+            and
+            <a
+              href="https://usaco.guide/general/resources-cp"
+              target="_blank"
+              rel="noopener"
+              >USACO Guide</a
+            >. This is a practice gym, not a Codeforces contest or an official
+            curriculum.
+          </p>
+          <div id="gym-topics"></div>
         </section>
         <section id="insights" class="view" hidden>
           <div class="section-heading">

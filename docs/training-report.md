@@ -1,5 +1,7 @@
 # IIT Kanpur cohort evaluation
 
+**Usage correction:** this is evaluation of acceptance among submitted attempts, not independent solve ability. These classifier artifacts are experimental and currently disabled for practice recommendations. The app uses rating-bounded topic Elo heuristics while the classifier remains available for analysis in Insights. Dataset size and temporal evaluation do not resolve the target-selection mismatch.
+
 This run imported 320 real profiles selected across current rating levels from 1,574 public API profiles whose organization text exactly matched `IIT Kanpur`. The roster includes inactive and retired rated profiles. The API does not expose numeric organization ID 470, so this is a text-based cohort rather than verified membership in that numeric organization. The synthetic demo and other imported profiles did not enter this run.
 
 ## Dataset

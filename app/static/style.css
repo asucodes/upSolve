@@ -1,4 +1,71 @@
 /* Compact layout inspired by the classic Codeforces interface. */
+.problem-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid #bbb;
+  background: #f7f7f7;
+  margin: 12px 0;
+}
+.problem-filter label {
+  margin: 0;
+  flex: 1 1 150px;
+}
+.problem-filter input:not([type="checkbox"]),
+.problem-filter select {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+}
+.pagination {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  align-items: center;
+  margin: 15px 0;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.solved-row {
+  background: #e7f3df !important;
+}
+.topic-gym {
+  border: 1px solid #bbb;
+  border-radius: 5px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+.topic-gym summary {
+  padding: 10px;
+  cursor: pointer;
+  background: #eee;
+  color: #315897;
+  font-weight: bold;
+}
+.topic-gym summary span {
+  float: right;
+  color: #555;
+  font-size: 11px;
+  font-weight: normal;
+}
+.gym-content {
+  padding: 10px;
+  overflow-x: auto;
+}
+@media (max-width: 600px) {
+  nav {
+    flex-wrap: wrap;
+    gap: 10px !important;
+  }
+  .topic-gym summary span {
+    float: none;
+    display: block;
+    margin-top: 5px;
+  }
+}
 :root {
   font-family: Arial, Helvetica, sans-serif;
   color: #222;
