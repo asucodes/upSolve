@@ -59,6 +59,15 @@ def test_multitag_updates_split_credit():
     assert [t["rating"] for t in a["topics"]] == [1008, 1008]
 
 
+def test_solved_total_includes_unrated_problems_but_deduplicates_repeat_accepts():
+    unrated = submission(1, 0, "OK")
+    unrated["problem"].pop("rating")
+    analysis = analyze(
+        [unrated, submission(2, 1, "OK"), submission(3, 2, "OK", "B")], 3
+    )
+    assert len(analysis["solved"]) == 2
+
+
 def test_recommendations_exclude_attempted_and_keep_probability_band():
     a = analyze([submission(1, 0, "OK")], 1)
     catalog = [submission(2, 0, "OK", x)["problem"] for x in ["A", "B", "C", "D"]]

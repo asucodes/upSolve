@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 let handle = "",
   data = null,
   topics = [];
+let loadVersion = 0;
 const status = (message) => ($("status").textContent = message);
 function ratingColor(rating) {
   if (rating == null || rating < 1200) return "#777";
@@ -61,9 +62,13 @@ async function savedProfiles() {
           `<option value="${esc(p.handle)}">${esc(p.handle)}${p.sample ? " (sample)" : ""}</option>`,
       )
       .join("");
+  $("profiles").value = handle;
 }
 async function load(h) {
-  data = await api(`/profiles/${encodeURIComponent(h)}/dashboard`);
+  const version = ++loadVersion;
+  const loaded = await api(`/profiles/${encodeURIComponent(h)}/dashboard`);
+  if (version !== loadVersion) return;
+  data = loaded;
   handle = h;
   localStorage.setItem("upsolve.handle", h);
   $("workspace").hidden = false;
@@ -77,7 +82,10 @@ async function load(h) {
   $("recommendation-note").textContent = data.recommendation_note;
   const a = data.analysis;
   $("stats").innerHTML = [
-    ["Problems solved", a.solved.length],
+    [
+      data.sample ? "Sample problems solved" : "Problems solved (public API)",
+      a.solved.length,
+    ],
     ["Topics explored", a.topics.filter((t) => t.evidence).length],
     ["Official rating", data.official_rating ?? "Unrated"],
     ["Training target", data.plan.target + " / week"],
@@ -87,6 +95,9 @@ async function load(h) {
         `<div class="stat"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`,
     )
     .join("");
+  $("coverage-note").innerHTML = data.sample
+    ? ""
+    : `Counted from ${data.submission_coverage.submissions} imported submissions. This may differ from your full Codeforces profile total. <a href="${esc(data.submission_coverage.profile_url)}" target="_blank" rel="noopener">View Codeforces profile</a>.`;
   $("recommendations").innerHTML =
     '<table class="problems-table"><thead><tr><th scope="col">#</th><th scope="col">Problem</th><th scope="col">Rating</th><th scope="col">Solve estimate</th></tr></thead><tbody>' +
     (data.recommendations
@@ -129,6 +140,7 @@ async function load(h) {
     "Official rating",
   );
   topics = await api("/topics");
+  if (version !== loadVersion) return;
   for (const id of ["focus-one", "focus-two"])
     $(id).innerHTML =
       '<option value="">No focus</option>' +
@@ -150,7 +162,9 @@ async function load(h) {
   $("week-bar").value = weekly;
   heatmap(a.activity);
   await savedProfiles();
+  if (version !== loadVersion) return;
   await metrics();
+  if (version !== loadVersion) return;
   status(
     `Loaded ${data.handle}. ${data.sample ? "Sample data is separate from real imports." : "Sync after practicing to update your progress."}`,
   );
@@ -256,9 +270,18 @@ $("plan-form").onsubmit = (e) => {
 };
 async function metrics() {
   const m = await api("/model");
-  $("model-metrics").textContent = m.available
-    ? `Chronological test: ${m.metrics.test_attempts} attempts · Accuracy ${(m.metrics.accuracy * 100).toFixed(1)}% · Brier ${m.metrics.brier.toFixed(3)} · Elo Brier ${m.metrics.elo_brier.toFixed(3)} · Log loss ${m.metrics.log_loss.toFixed(3)}`
-    : "No trained classifier yet. Recommendations use Elo estimates.";
+  if (!m.available) {
+    $("model-metrics").textContent =
+      "No trained classifier yet. Recommendations use Elo estimates.";
+    return;
+  }
+  const result = m.metrics;
+  const percent = (value) =>
+    value == null ? "Not available" : `${(value * 100).toFixed(1)}%`;
+  const score = (value) => (value == null ? "Not available" : value.toFixed(3));
+  const band = result.recommendation_band;
+  $("model-metrics").innerHTML =
+    `<p>${m.profiles ? `${m.profiles} real profiles · ` : ""}${result.training_attempts} training attempts · ${result.test_attempts} later test attempts.</p><table class="problems-table"><thead><tr><th>Model</th><th>Accuracy</th><th>Brier score ↓</th></tr></thead><tbody><tr><td>Logistic regression</td><td>${percent(result.accuracy)}</td><td>${score(result.brier)}</td></tr><tr><td>Constant training base rate</td><td>${percent(result.majority_accuracy)}</td><td>${score(result.base_rate_brier)}</td></tr><tr><td>Elo estimates</td><td>Not evaluated</td><td>${score(result.elo_brier)}</td></tr></tbody></table><p>Log loss: ${score(result.log_loss)}. Accuracy is affected by the proportion of successful attempts.</p>${band ? `<p>50–70% band: ${band.count} test attempts; predicted ${percent(band.mean_predicted)}, observed ${percent(band.observed_success)}.</p>` : ""}`;
 }
 $("train-model").onclick = () =>
   guarded(async () => {

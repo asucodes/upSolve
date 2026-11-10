@@ -194,8 +194,10 @@ def load_demo() -> dict:
 def profiles() -> list[dict]:
     with store.connect() as db:
         return [
-            {"handle": p["handle"], "sample": p["sample"], "updated": p["updated"]}
-            for p in store.all_records(db, "profile")
+            {"handle": row[0], "sample": bool(row[1]), "updated": row[2]}
+            for row in db.execute(
+                "SELECT json_extract(body, '$.handle'), json_extract(body, '$.sample'), json_extract(body, '$.updated') FROM records WHERE kind='profile' ORDER BY id"
+            )
         ]
 
 
@@ -220,6 +222,20 @@ def dashboard(handle: str) -> dict:
         "sample": p["sample"],
         "updated": p["updated"],
         "official_rating": p.get("rating"),
+        "submission_coverage": {
+            "source": "synthetic sample"
+            if p["sample"]
+            else "Codeforces public user.status API",
+            "submissions": len(p["submissions"]),
+            "accepted_submissions": sum(
+                s.get("verdict") == "OK" for s in p["submissions"]
+            ),
+            "unique_solved": len(analysis["solved"]),
+            "profile_url": None
+            if p["sample"]
+            else "https://codeforces.com/profile/" + p["handle"],
+            "note": "Public API solves can differ from the total shown on the Codeforces profile. Submissions unavailable through this API cannot contribute to coaching estimates.",
+        },
         "contest_history": p.get("contest_history", []),
         "analysis": {k: v for k, v in analysis.items() if k != "examples"},
         "recommendations": recommendations,
@@ -267,6 +283,9 @@ def model_status() -> dict:
     return {
         "available": bool(artifact),
         "metrics": artifact["metrics"] if artifact else None,
+        "profiles": len(artifact.get("handles", [])) if artifact else 0,
+        "trained_at": artifact.get("trained_at") if artifact else None,
+        "version": artifact.get("version") if artifact else None,
     }
 
 
