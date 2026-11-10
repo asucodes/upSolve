@@ -1,0 +1,16 @@
+[project]
+name = "upsolve-coach"
+version = "0.1.0"
+description = "Explainable Codeforces practice coaching"
+requires-python = ">=3.12"
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "httpx>=0.28,<1", "scikit-learn>=1.6,<2"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8,<10",
+    "ruff>=0.17.4",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
